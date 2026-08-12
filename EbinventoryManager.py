@@ -361,12 +361,12 @@ class EbInventoryGridApp:
 
 		ttk.Label(frame, text="Columns:").grid(row=1, column=0, sticky="w", pady=4)
 		cols_var = tk.IntVar(value=self.grid_cols)
-		cols_spin = tk.Spinbox(frame, from_=4, to=30, textvariable=cols_var, width=8)
+		cols_spin = tk.Spinbox(frame, from_=1, to=30, textvariable=cols_var, width=8)
 		cols_spin.grid(row=1, column=1, sticky="w", pady=4)
 
 		ttk.Label(frame, text="Rows:").grid(row=2, column=0, sticky="w", pady=4)
 		rows_var = tk.IntVar(value=self.grid_rows)
-		rows_spin = tk.Spinbox(frame, from_=4, to=30, textvariable=rows_var, width=8)
+		rows_spin = tk.Spinbox(frame, from_=1, to=30, textvariable=rows_var, width=8)
 		rows_spin.grid(row=2, column=1, sticky="w", pady=4)
 
 		note = ttk.Label(
@@ -388,8 +388,8 @@ class EbInventoryGridApp:
 				messagebox.showerror("Invalid value", "Please enter valid whole numbers.")
 				return
 
-			new_cols = max(4, new_cols)
-			new_rows = max(4, new_rows)
+			new_cols = max(1, new_cols)
+			new_rows = max(1, new_rows)
 
 			self.grid_cols = new_cols
 			self.grid_rows = new_rows
@@ -431,9 +431,9 @@ class EbInventoryGridApp:
 		stored_rows = raw.get("grid_rows")
 		stored_cols = raw.get("grid_cols")
 		if isinstance(stored_rows, int) and not isinstance(stored_rows, bool):
-			self.grid_rows = min(30, max(4, stored_rows))
+			self.grid_rows = min(30, max(1, stored_rows))
 		if isinstance(stored_cols, int) and not isinstance(stored_cols, bool):
-			self.grid_cols = min(30, max(4, stored_cols))
+			self.grid_cols = min(30, max(1, stored_cols))
 
 		templates_by_id = {template.item_id: template for template in self.templates}
 		placements = raw.get("placements", [])
