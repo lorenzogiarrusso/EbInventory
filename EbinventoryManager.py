@@ -25,6 +25,7 @@ class ItemTemplate:
 	height: int
 	color: str
 	mask: tuple[tuple[bool, ...], ...]
+	inventory_id: int = 0
 
 
 @dataclass
@@ -33,6 +34,14 @@ class Placement:
 	row: int
 	col: int
 	rotation: int = 0
+
+
+@dataclass
+class InventoryData:
+	name: str
+	grid_rows: int
+	grid_cols: int
+	placements: list[Placement]
 
 
 class EbInventoryGridApp:
@@ -47,6 +56,15 @@ class EbInventoryGridApp:
 		self.cell_size = 56
 		self.grid_rows = 8
 		self.grid_cols = 8
+
+		self.max_inventories = 8
+		self.inventories: list[InventoryData] = [
+			InventoryData(name=f"Inventory {index + 1}", grid_rows=8, grid_cols=8, placements=[])
+			for index in range(self.max_inventories)
+		]
+		self.active_inventory_index = 0
+		self.inventory_buttons: dict[int, tk.Button] = {}
+		self.grid_title_label: Optional[ttk.Label] = None
 
 		storage_directory = get_storage_directory()
 		self.storage_path = storage_directory / "custom_items.json"
@@ -75,10 +93,12 @@ class EbInventoryGridApp:
 
 		self.status_var = tk.StringVar(value="Ready")
 		self._load_inventory_state()
+		self._sync_active_inventory_from_data()
 
 		self._build_styles()
 		self._build_ui()
 		self._rebuild_grid()
+		self._update_inventory_selector()
 
 		self.root.bind_all("<KeyPress>", self._on_global_keypress)
 		self.root.bind_all("<Motion>", self._on_global_motion)
@@ -114,6 +134,29 @@ class EbInventoryGridApp:
 
 		status_bar = ttk.Label(self.root, textvariable=self.status_var, style="Status.TLabel", anchor="w")
 		status_bar.pack(side="bottom", fill="x")
+
+		self._build_inventory_tab_bar()
+
+	def _build_inventory_tab_bar(self) -> None:
+		self.tab_bar = tk.Frame(self.root, bg="#c7cbd1")
+		self.tab_bar.pack(side="bottom", fill="x")
+
+		tabs_container = tk.Frame(self.tab_bar, bg="#c7cbd1")
+		tabs_container.pack(side="left", fill="y", padx=(6, 0), pady=(3, 3))
+
+		for index in range(self.max_inventories):
+			tab = tk.Label(
+				tabs_container,
+				font=(self.FONT_FAMILY, 9, "bold"),
+				padx=14,
+				pady=6,
+				cursor="hand2",
+				relief="flat",
+				bd=1,
+			)
+			tab.pack(side="left", padx=(0, 2))
+			tab.bind("<Button-1>", lambda _event, idx=index: self._switch_inventory(idx))
+			self.inventory_buttons[index] = tab
 
 	def _build_sidebar(self) -> None:
 		header = ttk.Label(self.sidebar, text="Items", style="Header.TLabel")
@@ -178,18 +221,7 @@ class EbInventoryGridApp:
 		)
 		self.root.bind_all("<MouseWheel>", self._on_items_mousewheel)
 
-		if not self.templates:
-			self.empty_sidebar_label = ttk.Label(
-				self.items_frame,
-				text="No items yet. Use + to create one.",
-				style="Subtle.TLabel",
-				wraplength=230,
-				justify="left",
-			)
-			self.empty_sidebar_label.pack(anchor="w", padx=18, pady=(0, 18))
-
-		for template in self.templates:
-			self._create_item_card(template)
+		self._populate_sidebar_items()
 
 		ttk.Separator(self.sidebar).pack(fill="x", padx=18, pady=18)
 		ttk.Button(self.sidebar, text="Save inventory state", style="Action.TButton", command=self._save_inventory).pack(
@@ -322,6 +354,7 @@ class EbInventoryGridApp:
 
 		title = ttk.Label(header_row, text="Inventory Grid", font=(self.FONT_FAMILY, 18, "bold"), background="#f3f4f6")
 		title.pack(side="left")
+		self.grid_title_label = title
 
 		grid_frame = ttk.Frame(self.main, style="Main.TFrame")
 		grid_frame.pack(fill="both", expand=True, padx=18, pady=(0, 18))
@@ -409,11 +442,91 @@ class EbInventoryGridApp:
 		dialog.geometry(f"+{x}+{y}")
 
 	def _clear_inventory(self) -> None:
-		for template in self.templates:
+		for template in self._active_templates():
 			self._set_item_available(template, True)
 		self.placements.clear()
 		self._rebuild_grid()
 		self._set_status("Inventory cleared.")
+
+	def _active_templates(self) -> list[ItemTemplate]:
+		return [template for template in self.templates if template.inventory_id == self.active_inventory_index]
+
+	def _populate_sidebar_items(self) -> None:
+		if self.items_frame is None:
+			return
+
+		for widgets in self.item_card_widgets.values():
+			widgets["card"].destroy()
+		self.item_card_widgets.clear()
+
+		if self.empty_sidebar_label is not None:
+			self.empty_sidebar_label.destroy()
+			self.empty_sidebar_label = None
+
+		active_templates = self._active_templates()
+		if not active_templates:
+			self.empty_sidebar_label = ttk.Label(
+				self.items_frame,
+				text="No items yet. Use + to create one.",
+				style="Subtle.TLabel",
+				wraplength=230,
+				justify="left",
+			)
+			self.empty_sidebar_label.pack(anchor="w", padx=18, pady=(0, 18))
+			return
+
+		for template in active_templates:
+			self._create_item_card(template)
+
+	def _sync_active_inventory_from_data(self) -> None:
+		active = self.inventories[self.active_inventory_index]
+		self.grid_rows = active.grid_rows
+		self.grid_cols = active.grid_cols
+		self.placements = list(active.placements)
+
+	def _capture_active_inventory(self) -> None:
+		current = self.inventories[self.active_inventory_index]
+		self.inventories[self.active_inventory_index] = InventoryData(
+			name=current.name,
+			grid_rows=self.grid_rows,
+			grid_cols=self.grid_cols,
+			placements=list(self.placements),
+		)
+
+	def _switch_inventory(self, index: int) -> None:
+		if index == self.active_inventory_index or not (0 <= index < self.max_inventories):
+			return
+
+		self.dragging_template = None
+		self.drag_rotation = 0
+		self.drag_preview = None
+		self.moving_placement = None
+		self.moving_rotation = 0
+		self.move_preview = None
+		self._clear_preview()
+		self._destroy_ghost()
+		self._hide_hover_tooltip()
+
+		self._capture_active_inventory()
+		self.active_inventory_index = index
+		self._sync_active_inventory_from_data()
+
+		self._populate_sidebar_items()
+		self._rebuild_grid()
+		self._update_inventory_selector()
+		self._set_status(f"Switched to {self.inventories[index].name}.")
+
+	def _update_inventory_selector(self) -> None:
+		for index, tab in self.inventory_buttons.items():
+			name = self.inventories[index].name
+			if index == self.active_inventory_index:
+				tab.configure(text=name, bg="#e5e7eb", fg="#111827", relief="raised")
+			else:
+				tab.configure(text=name, bg="#c7cbd1", fg="#4b5563", relief="flat")
+
+		if self.grid_title_label is not None:
+			name = self.inventories[self.active_inventory_index].name
+			self.grid_title_label.configure(text=f"Inventory Grid — {name}")
 
 	def _load_inventory_state(self) -> None:
 		if not self.inventory_save_path.exists():
@@ -428,35 +541,92 @@ class EbInventoryGridApp:
 		if not isinstance(raw, dict):
 			return
 
-		stored_rows = raw.get("grid_rows")
-		stored_cols = raw.get("grid_cols")
-		if isinstance(stored_rows, int) and not isinstance(stored_rows, bool):
-			self.grid_rows = min(30, max(1, stored_rows))
-		if isinstance(stored_cols, int) and not isinstance(stored_cols, bool):
-			self.grid_cols = min(30, max(1, stored_cols))
-
 		templates_by_id = {template.item_id: template for template in self.templates}
-		placements = raw.get("placements", [])
-		if not isinstance(placements, list):
-			return
+		inventories_data = raw.get("inventories")
 
-		for entry in placements:
+		if isinstance(inventories_data, list) and inventories_data:
+			self._load_multi_inventory_format(raw, inventories_data, templates_by_id)
+		else:
+			self._load_legacy_inventory_format(raw, templates_by_id)
+
+	def _load_multi_inventory_format(
+		self,
+		raw: dict,
+		inventories_data: list,
+		templates_by_id: dict[str, ItemTemplate],
+	) -> None:
+		for index in range(min(len(inventories_data), self.max_inventories)):
+			entry = inventories_data[index]
 			if not isinstance(entry, dict):
 				continue
-			template = templates_by_id.get(str(entry.get("item_id", "")))
-			if template is None:
-				continue
-			try:
-				row = int(entry["row"])
-				col = int(entry["col"])
-				rotation = int(entry.get("rotation", 0)) % 360
-			except (KeyError, TypeError, ValueError):
-				continue
 
-			self.placements.append(Placement(template=template, row=row, col=col, rotation=rotation))
-			self.item_available[template] = False
+			name = str(entry.get("name") or f"Inventory {index + 1}").strip() or f"Inventory {index + 1}"
 
-		if self.placements or "placements" in raw:
+			rows = entry.get("grid_rows", 8)
+			cols = entry.get("grid_cols", 8)
+			rows = rows if isinstance(rows, int) and not isinstance(rows, bool) else 8
+			cols = cols if isinstance(cols, int) and not isinstance(cols, bool) else 8
+			rows = min(30, max(1, rows))
+			cols = min(30, max(1, cols))
+
+			placements: list[Placement] = []
+			raw_placements = entry.get("placements", [])
+			if isinstance(raw_placements, list):
+				for placement_entry in raw_placements:
+					if not isinstance(placement_entry, dict):
+						continue
+					template = templates_by_id.get(str(placement_entry.get("item_id", "")))
+					if template is None or template.inventory_id != index:
+						continue
+					try:
+						row = int(placement_entry["row"])
+						col = int(placement_entry["col"])
+						rotation = int(placement_entry.get("rotation", 0)) % 360
+					except (KeyError, TypeError, ValueError):
+						continue
+
+					placements.append(Placement(template=template, row=row, col=col, rotation=rotation))
+					self.item_available[template] = False
+
+			self.inventories[index] = InventoryData(name=name, grid_rows=rows, grid_cols=cols, placements=placements)
+
+		active = raw.get("active_inventory", 0)
+		if isinstance(active, int) and not isinstance(active, bool) and 0 <= active < self.max_inventories:
+			self.active_inventory_index = active
+
+		self._set_status("Loaded saved inventory.")
+
+	def _load_legacy_inventory_format(self, raw: dict, templates_by_id: dict[str, ItemTemplate]) -> None:
+		rows = raw.get("grid_rows", 8)
+		cols = raw.get("grid_cols", 8)
+		rows = rows if isinstance(rows, int) and not isinstance(rows, bool) else 8
+		cols = cols if isinstance(cols, int) and not isinstance(cols, bool) else 8
+		rows = min(30, max(1, rows))
+		cols = min(30, max(1, cols))
+
+		placements_data = raw.get("placements", [])
+		placements: list[Placement] = []
+		if isinstance(placements_data, list):
+			for entry in placements_data:
+				if not isinstance(entry, dict):
+					continue
+				template = templates_by_id.get(str(entry.get("item_id", "")))
+				if template is None:
+					continue
+				try:
+					row = int(entry["row"])
+					col = int(entry["col"])
+					rotation = int(entry.get("rotation", 0)) % 360
+				except (KeyError, TypeError, ValueError):
+					continue
+
+				placements.append(Placement(template=template, row=row, col=col, rotation=rotation))
+				self.item_available[template] = False
+
+		self.active_inventory_index = 0
+		self.inventories[0] = InventoryData(name=self.inventories[0].name, grid_rows=rows, grid_cols=cols, placements=placements)
+
+		if placements or "placements" in raw:
 			self._set_status("Loaded saved inventory.")
 
 	def _save_inventory(self) -> None:
@@ -466,17 +636,26 @@ class EbInventoryGridApp:
 		):
 			return
 
+		self._capture_active_inventory()
+
 		data = {
-			"grid_rows": self.grid_rows,
-			"grid_cols": self.grid_cols,
-			"placements": [
+			"active_inventory": self.active_inventory_index,
+			"inventories": [
 				{
-					"item_id": placement.template.item_id,
-					"row": placement.row,
-					"col": placement.col,
-					"rotation": placement.rotation,
+					"name": inventory.name,
+					"grid_rows": inventory.grid_rows,
+					"grid_cols": inventory.grid_cols,
+					"placements": [
+						{
+							"item_id": placement.template.item_id,
+							"row": placement.row,
+							"col": placement.col,
+							"rotation": placement.rotation,
+						}
+						for placement in inventory.placements
+					],
 				}
-				for placement in self.placements
+				for inventory in self.inventories
 			],
 		}
 		try:
@@ -531,6 +710,11 @@ class EbInventoryGridApp:
 			if not mask:
 				continue
 
+			inventory_id = entry.get("inventory_id", 0)
+			if not isinstance(inventory_id, int) or isinstance(inventory_id, bool):
+				inventory_id = 0
+			inventory_id = min(self.max_inventories - 1, max(0, inventory_id))
+
 			template = ItemTemplate(
 				item_id=str(entry.get("item_id") or uuid.uuid4()),
 				name=name,
@@ -538,6 +722,7 @@ class EbInventoryGridApp:
 				height=len(mask),
 				color=color,
 				mask=mask,
+				inventory_id=inventory_id,
 			)
 			templates.append(template)
 
@@ -552,6 +737,7 @@ class EbInventoryGridApp:
 				"height": template.height,
 				"color": template.color,
 				"mask": [[cell for cell in row] for row in template.mask],
+				"inventory_id": template.inventory_id,
 			}
 			for template in self.templates
 		]
@@ -813,6 +999,7 @@ class EbInventoryGridApp:
 				height=len(trimmed_mask),
 				color=color_var.get().strip() or "#7c4dff",
 				mask=trimmed_mask,
+				inventory_id=existing_template.inventory_id if existing_template is not None else self.active_inventory_index,
 			)
 			if existing_template is None:
 				self._add_custom_template(template)
@@ -894,6 +1081,7 @@ class EbInventoryGridApp:
 			height=template.height,
 			color=template.color,
 			mask=tuple(tuple(row) for row in template.mask),
+			inventory_id=template.inventory_id,
 		)
 		self._add_custom_template(duplicate)
 
@@ -921,7 +1109,7 @@ class EbInventoryGridApp:
 			for widget in widgets.values():
 				widget.destroy()
 
-		if not self.templates and self.empty_sidebar_label is None and self.items_frame is not None:
+		if not self._active_templates() and self.empty_sidebar_label is None and self.items_frame is not None:
 			self.empty_sidebar_label = ttk.Label(
 				self.items_frame,
 				text="No items yet. Use + to create one.",

@@ -88,7 +88,7 @@ You can also double-click an item to edit it.
 
 ### Configure the grid
 
-Click **Settings** to change the number of rows and columns. The grid supports values from 4 to 30. Items that no longer fit after resizing are removed.
+Click **Settings** to change the number of rows and columns. The grid supports values from 1 to 30. Items that no longer fit after resizing are removed.
 
 ### Save and reset
 
