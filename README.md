@@ -86,23 +86,32 @@ Right-click an item in the sidebar to:
 
 You can also double-click an item to edit it.
 
+### Manage inventories
+
+The application supports up to eight separate inventories. Use the tabs along the bottom of the window to switch between them.
+
+- Each inventory has its own grid size, placed items, and sidebar item templates.
+- New item templates are assigned to the inventory that is active when they are created.
+- To transfer an available sidebar item, drag it onto a different inventory tab.
+- To transfer a placed item, drag it from the grid onto a different inventory tab. It is removed from the current grid and becomes available in the destination inventory's sidebar.
+
 ### Configure the grid
 
-Click **Settings** to change the number of rows and columns. The grid supports values from 1 to 30. Items that no longer fit after resizing are removed.
+Click **Settings** to change the number of rows and columns for the active inventory. The grid supports values from 1 to 30. Items that no longer fit after resizing are removed.
 
 ### Save and reset
 
-- Click **Save inventory state** to save the current grid size and placements.
+- Click **Save inventory state** to save every inventory's grid size and placements.
 - If a saved inventory exists, it is loaded automatically at startup.
-- Click **Clear inventory** to remove all placed items while keeping the item templates.
+- Click **Clear inventory** to remove placed items from the active inventory while keeping its item templates.
 - Click **Guide** inside the application for a short built-in usage guide.
 
 ## Local Data Files
 
 The application stores data next to the Python script or packaged executable:
 
-- `custom_items.json` stores item templates, shapes, colors, and names.
-- `inventory_state.json` stores the grid size and current item placements.
+- `custom_items.json` stores item templates, shapes, colors, names, and each item's inventory association.
+- `inventory_state.json` stores every inventory's grid size, placements, and the active inventory.
 
 These files are local application data and are ignored by Git in this project. Copy them separately if you need to transfer a personal inventory to another installation.
 

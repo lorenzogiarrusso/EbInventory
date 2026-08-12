@@ -286,6 +286,11 @@ class EbInventoryGridApp:
 				"Edit, duplicate or delete an item:\n"
 				"1. Right-click the item in the sidebar.\n"
 				"2. Choose Edit, Duplicate or Delete. To Edit, you can also just double-click on it.\n\n"
+				"Manage inventories:\n"
+				"1. Click an inventory tab along the bottom of the window to switch inventories.\n"
+				"2. Each inventory has its own grid size, placed items and sidebar items.\n"
+				"3. Drag an available sidebar item or a placed grid item onto another inventory tab to transfer it.\n"
+				"4. Transferred grid items are removed from their original grid and become available in the destination sidebar.\n\n"
 				"Save the inventory state:\n"
 				"0. If a save already exists, it will be automatically loaded on startup.\n"
 				"1. To save, click the Save inventory state button in the sidebar.\n"				
@@ -1276,16 +1281,21 @@ class EbInventoryGridApp:
 		if self.dragging_template is None:
 			return
 
-		target = self.drag_preview
 		template = self.dragging_template
 		rotation = self.drag_rotation
 		placed_size = self._current_drag_size(template, rotation)
+		target_inventory_index = self._inventory_tab_at_pointer()
+		target = self.drag_preview
 
 		self.dragging_template = None
 		self.drag_rotation = 0
 		self.drag_preview = None
 		self._clear_preview()
 		self._destroy_ghost()
+
+		if target_inventory_index is not None:
+			self._move_template_to_inventory(template, target_inventory_index)
+			return
 
 		if target is None:
 			self._set_status(f"{template.name} was not placed.")
@@ -1301,6 +1311,44 @@ class EbInventoryGridApp:
 				self._set_status(f"Placed {template.name} at row {row + 1}, column {col + 1}.")
 		else:
 			self._set_status(f"Could not place {template.name} there.")
+
+	def _inventory_tab_at_pointer(self) -> Optional[int]:
+		pointer_x, pointer_y = self.root.winfo_pointerxy()
+		for index, tab in self.inventory_buttons.items():
+			left = tab.winfo_rootx()
+			top = tab.winfo_rooty()
+			right = left + tab.winfo_width()
+			bottom = top + tab.winfo_height()
+			if left <= pointer_x < right and top <= pointer_y < bottom:
+				return index
+		return None
+
+	def _move_template_to_inventory(self, template: ItemTemplate, destination_index: int) -> None:
+		if destination_index == template.inventory_id:
+			self._set_status(f"{template.name} already belongs to {self.inventories[destination_index].name}.")
+			return
+
+		try:
+			index = self.templates.index(template)
+		except ValueError:
+			self._set_status(f"Could not move {template.name}.")
+			return
+
+		moved_template = ItemTemplate(
+			item_id=template.item_id,
+			name=template.name,
+			width=template.width,
+			height=template.height,
+			color=template.color,
+			mask=template.mask,
+			inventory_id=destination_index,
+		)
+		available = self.item_available.pop(template, True)
+		self.templates[index] = moved_template
+		self.item_available[moved_template] = available
+		self._populate_sidebar_items()
+		self._save_templates()
+		self._set_status(f"Moved {template.name} to {self.inventories[destination_index].name}.")
 
 	def _on_grid_left_press(self, event: tk.Event) -> None:
 		if self.dragging_template is not None or self.moving_placement is not None:
@@ -1362,11 +1410,18 @@ class EbInventoryGridApp:
 		if placement is None:
 			return
 
+		target_inventory_index = self._inventory_tab_at_pointer()
 		target = self.move_preview
 		self.moving_placement = None
 		self.move_preview = None
 		self._clear_preview()
 		self._destroy_ghost()
+
+		if target_inventory_index is not None:
+			self._set_item_available(placement.template, True)
+			self._rebuild_grid()
+			self._move_template_to_inventory(placement.template, target_inventory_index)
+			return
 
 		if target is None or not target[2]:
 			self.placements.append(Placement(template=placement.template, row=placement.row, col=placement.col, rotation=placement.rotation))
